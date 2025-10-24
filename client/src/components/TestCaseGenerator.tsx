@@ -29,14 +29,14 @@ export default function TestCaseGenerator() {
 
   const generateMutation = useMutation({
     mutationFn: async (data: GenerateTestCasesRequest) => {
-      const response = await apiRequest<TestCaseGenerationResponse>(
+      const response = await apiRequest(
         "POST",
         "/api/generate-test-cases",
         data
       );
-      return response;
+      return await response.json() as TestCaseGenerationResponse;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: TestCaseGenerationResponse) => {
       setGeneratedData(data);
       toast({
         title: "Test cases generated successfully!",
