@@ -1,0 +1,124 @@
+# AI Test Case Generator
+
+An AI-powered application that automatically generates comprehensive test cases for any website using advanced AI analysis.
+
+## Overview
+
+This application allows users to:
+- Enter any website URL
+- Provide custom testing instructions
+- Get AI-generated comprehensive test cases including:
+  - UI/UX tests
+  - Form validation tests
+  - Navigation tests
+  - End-to-end user flows
+  - Automated Playwright test code
+
+## Tech Stack
+
+### Frontend
+- React with TypeScript
+- Tailwind CSS for styling
+- Shadcn UI components
+- TanStack Query for data fetching
+- Wouter for routing
+- React Hook Form with Zod validation
+
+### Backend
+- Express.js server
+- OpenAI GPT-5 for AI-powered test case generation
+- Cheerio for web scraping and HTML parsing
+- Axios for HTTP requests
+
+## Project Structure
+
+```
+├── client/
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── TestCaseGenerator.tsx  # Main component
+│   │   ├── pages/
+│   │   │   └── Home.tsx               # Home page
+│   │   └── App.tsx                    # App routing
+├── server/
+│   ├── routes.ts                      # API endpoints
+│   ├── scraper.ts                     # Web scraping logic
+│   ├── testCaseGenerator.ts          # AI test generation
+│   └── openai.ts                      # OpenAI client
+├── shared/
+│   └── schema.ts                      # Shared TypeScript schemas
+└── design_guidelines.md               # UI/UX design guidelines
+```
+
+## Features
+
+1. **Website Analysis**: Automatically scrapes and analyzes website structure including:
+   - Page title and description
+   - Navigation links
+   - Forms and input fields
+   - Buttons and interactive elements
+   - Internal links
+
+2. **AI-Powered Test Generation**: Uses OpenAI GPT-5 to generate:
+   - Comprehensive test cases
+   - Test steps and expected results
+   - Playwright automation code
+   - Test categorization (UI, API, E2E, etc.)
+   - Priority levels (High, Medium, Low)
+
+3. **Beautiful UI**: 
+   - Clean, professional design following Linear/Material Design principles
+   - Responsive layout for all screen sizes
+   - Interactive test case cards with expand/collapse
+   - Syntax-highlighted code blocks
+   - Copy and download functionality
+
+4. **Export Options**:
+   - Copy individual test cases to clipboard
+   - Download all test cases as Markdown file
+   - Includes Playwright code for automation
+
+## API Endpoints
+
+### POST /api/generate-test-cases
+Generates test cases for a given website URL and user prompt.
+
+**Request Body:**
+```json
+{
+  "url": "https://example.com",
+  "prompt": "Test all form validations and user login flow"
+}
+```
+
+**Response:**
+```json
+{
+  "analysis": { ... },
+  "testCases": [ ... ],
+  "summary": {
+    "totalTests": 10,
+    "byType": { "UI": 5, "E2E": 3, "API": 2 },
+    "coverageAreas": ["Forms", "Navigation", "Authentication"]
+  }
+}
+```
+
+## Environment Variables
+
+- `OPENAI_API_KEY`: Required for AI test case generation
+- `SESSION_SECRET`: Used for session management
+
+## Running the Application
+
+The application runs on a single port with both frontend and backend:
+- Frontend: Vite development server
+- Backend: Express.js API server
+- Command: `npm run dev`
+
+## Design Philosophy
+
+- **Developer-focused**: Clean, efficient interface for technical users
+- **Information hierarchy**: Clear separation between input, processing, and results
+- **Accessibility**: Proper ARIA labels, keyboard navigation, focus indicators
+- **Professional polish**: Subtle animations, consistent spacing, proper typography

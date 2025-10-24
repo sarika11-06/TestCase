@@ -73,17 +73,36 @@ ${testCase.expectedResult}
 
 ${testCase.playwrightCode ? `## Playwright Code\n\`\`\`javascript\n${testCase.playwrightCode}\n\`\`\`` : ''}`;
 
-    navigator.clipboard.writeText(content);
-    toast({
-      title: "Copied to clipboard",
-      description: "Test case copied successfully",
-    });
+    if (!navigator.clipboard) {
+      toast({
+        title: "Clipboard not available",
+        description: "Your browser doesn't support clipboard access. Please copy manually.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    navigator.clipboard.writeText(content)
+      .then(() => {
+        toast({
+          title: "Copied to clipboard",
+          description: "Test case copied successfully",
+        });
+      })
+      .catch(() => {
+        toast({
+          title: "Copy failed",
+          description: "Failed to copy to clipboard. Please try again.",
+          variant: "destructive",
+        });
+      });
   };
 
   const handleDownloadAll = () => {
     if (!generatedData) return;
 
-    const content = `# Test Cases for ${generatedData.analysis.url}
+    try {
+      const content = `# Test Cases for ${generatedData.analysis.url}
 
 Generated on: ${new Date().toLocaleString()}
 
@@ -115,18 +134,25 @@ ${tc.playwrightCode ? `## Playwright Code\n\`\`\`javascript\n${tc.playwrightCode
 ---
 `).join('\n')}`;
 
-    const blob = new Blob([content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `test-cases-${new Date().getTime()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const blob = new Blob([content], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `test-cases-${new Date().getTime()}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
 
-    toast({
-      title: "Downloaded successfully",
-      description: "All test cases downloaded as Markdown file",
-    });
+      toast({
+        title: "Downloaded successfully",
+        description: "All test cases downloaded as Markdown file",
+      });
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Failed to download test cases. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getTypeColor = (type: string) => {
@@ -254,22 +280,22 @@ ${tc.playwrightCode ? `## Playwright Code\n\`\`\`javascript\n${tc.playwrightCode
           <div className="space-y-6">
             {/* Summary Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card>
+              <Card data-testid="card-summary-total">
                 <CardContent className="p-6">
                   <div className="text-sm text-muted-foreground mb-1">Total Test Cases</div>
-                  <div className="text-2xl font-semibold text-foreground">{generatedData.summary.totalTests}</div>
+                  <div className="text-2xl font-semibold text-foreground" data-testid="text-total-tests">{generatedData.summary.totalTests}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card data-testid="card-summary-types">
                 <CardContent className="p-6">
                   <div className="text-sm text-muted-foreground mb-1">Test Types</div>
-                  <div className="text-2xl font-semibold text-foreground">{Object.keys(generatedData.summary.byType).length}</div>
+                  <div className="text-2xl font-semibold text-foreground" data-testid="text-test-types">{Object.keys(generatedData.summary.byType).length}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card data-testid="card-summary-coverage">
                 <CardContent className="p-6">
                   <div className="text-sm text-muted-foreground mb-1">Coverage Areas</div>
-                  <div className="text-2xl font-semibold text-foreground">{generatedData.summary.coverageAreas.length}</div>
+                  <div className="text-2xl font-semibold text-foreground" data-testid="text-coverage-areas">{generatedData.summary.coverageAreas.length}</div>
                 </CardContent>
               </Card>
             </div>
@@ -291,57 +317,65 @@ ${tc.playwrightCode ? `## Playwright Code\n\`\`\`javascript\n${tc.playwrightCode
               <h2 className="text-lg font-medium text-foreground">Generated Test Cases</h2>
               {generatedData.testCases.map((testCase) => (
                 <Card key={testCase.id} className="overflow-hidden">
-                  <CardHeader
-                    className="cursor-pointer hover-elevate"
-                    onClick={() => setExpandedTestCase(expandedTestCase === testCase.id ? null : testCase.id)}
-                    data-testid={`card-testcase-${testCase.id}`}
-                  >
+                  <CardHeader>
                     <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
+                      <button
+                        onClick={() => setExpandedTestCase(expandedTestCase === testCase.id ? null : testCase.id)}
+                        className="flex-1 min-w-0 text-left hover-elevate rounded-md -m-2 p-2"
+                        aria-expanded={expandedTestCase === testCase.id}
+                        aria-label={`Toggle details for ${testCase.title}`}
+                        data-testid={`button-toggle-${testCase.id}`}
+                      >
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <Badge className={`text-xs border ${getTypeColor(testCase.type)}`}>
+                          <Badge className={`text-xs border ${getTypeColor(testCase.type)}`} data-testid={`badge-type-${testCase.id}`}>
                             {testCase.type}
                           </Badge>
-                          <Badge className={`text-xs border ${getPriorityColor(testCase.priority)}`}>
+                          <Badge className={`text-xs border ${getPriorityColor(testCase.priority)}`} data-testid={`badge-priority-${testCase.id}`}>
                             {testCase.priority} Priority
                           </Badge>
                         </div>
-                        <CardTitle className="text-base font-medium text-foreground break-words">
+                        <CardTitle className="text-base font-medium text-foreground break-words" data-testid={`text-title-${testCase.id}`}>
                           {testCase.title}
                         </CardTitle>
-                        <CardDescription className="text-sm mt-1">
+                        <CardDescription className="text-sm mt-1" data-testid={`text-description-${testCase.id}`}>
                           {testCase.description}
                         </CardDescription>
-                      </div>
+                      </button>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopyTestCase(testCase);
-                          }}
+                          onClick={() => handleCopyTestCase(testCase)}
+                          aria-label={`Copy test case ${testCase.title}`}
                           data-testid={`button-copy-${testCase.id}`}
                         >
                           <Copy className="w-4 h-4" />
                         </Button>
-                        {expandedTestCase === testCase.id ? (
-                          <ChevronUp className="w-5 h-5 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                        )}
+                        <button
+                          onClick={() => setExpandedTestCase(expandedTestCase === testCase.id ? null : testCase.id)}
+                          className="flex items-center justify-center"
+                          aria-expanded={expandedTestCase === testCase.id}
+                          aria-label={`Toggle details for ${testCase.title}`}
+                          data-testid={`button-expand-icon-${testCase.id}`}
+                        >
+                          {expandedTestCase === testCase.id ? (
+                            <ChevronUp className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
+                          )}
+                        </button>
                       </div>
                     </div>
                   </CardHeader>
 
                   {expandedTestCase === testCase.id && (
-                    <CardContent className="border-t pt-6 space-y-6">
+                    <CardContent className="border-t pt-6 space-y-6" data-testid={`content-expanded-${testCase.id}`}>
                       {/* Test Steps */}
                       <div>
                         <h3 className="text-sm font-medium text-foreground mb-3">Test Steps</h3>
-                        <ol className="space-y-2">
+                        <ol className="space-y-2" data-testid={`list-steps-${testCase.id}`}>
                           {testCase.steps.map((step, idx) => (
-                            <li key={idx} className="flex gap-3 text-sm">
+                            <li key={idx} className="flex gap-3 text-sm" data-testid={`step-${testCase.id}-${idx}`}>
                               <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-medium">
                                 {idx + 1}
                               </span>
@@ -357,7 +391,7 @@ ${tc.playwrightCode ? `## Playwright Code\n\`\`\`javascript\n${tc.playwrightCode
                           <CheckCircle2 className="w-4 h-4 text-green-600" />
                           Expected Result
                         </h3>
-                        <p className="text-sm text-foreground bg-muted/50 p-4 rounded-md">
+                        <p className="text-sm text-foreground bg-muted/50 p-4 rounded-md" data-testid={`text-expected-${testCase.id}`}>
                           {testCase.expectedResult}
                         </p>
                       </div>
@@ -367,7 +401,7 @@ ${tc.playwrightCode ? `## Playwright Code\n\`\`\`javascript\n${tc.playwrightCode
                         <div>
                           <h3 className="text-sm font-medium text-foreground mb-2">Playwright Code</h3>
                           <div className="relative">
-                            <pre className="bg-[#2d2d2d] text-[#ccc] p-4 rounded-md overflow-x-auto text-xs font-mono">
+                            <pre className="bg-[#2d2d2d] text-[#ccc] p-4 rounded-md overflow-x-auto text-xs font-mono" data-testid={`code-playwright-${testCase.id}`}>
                               <code className="language-javascript">{testCase.playwrightCode}</code>
                             </pre>
                           </div>
