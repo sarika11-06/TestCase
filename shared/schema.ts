@@ -29,15 +29,27 @@ export type TestCase = z.infer<typeof testCaseSchema>;
 // Website Analysis Schema
 export const websiteAnalysisSchema = z.object({
   url: z.string(),
-  title: z.string().optional(),
-  description: z.string().optional(),
-  pages: z.array(z.string()).optional(),
-  forms: z.array(z.object({
-    name: z.string(),
-    fields: z.array(z.string()),
-  })).optional(),
+  allInteractive: z.array(
+    z.object({
+      tag: z.string(),
+      type: z.string(),
+      text: z.string(),
+      ariaLabel: z.string(),
+      role: z.string(),
+      placeholder: z.string(),
+      name: z.string(),
+      id: z.string(),
+      selectors: z.array(z.string()),
+      xpath: z.string(),
+      friendlyName: z.string().optional(),
+    })
+  ).optional(),
+  // Legacy fields for backward compatibility
+  forms: z.array(z.object({ name: z.string(), fields: z.array(z.any()) })).optional(),
+  buttonsWithSelectors: z.array(z.any()).optional(),
   buttons: z.array(z.string()).optional(),
-  links: z.array(z.string()).optional(),
+  linksWithXPaths: z.array(z.any()).optional(),
+  allInteractiveElements: z.array(z.any()).optional(),
 });
 
 export type WebsiteAnalysis = z.infer<typeof websiteAnalysisSchema>;
@@ -54,3 +66,10 @@ export const testCaseGenerationResponseSchema = z.object({
 });
 
 export type TestCaseGenerationResponse = z.infer<typeof testCaseGenerationResponseSchema>;
+
+// Scrape Request Schema (for scraping without generation)
+export const scrapeWebsiteRequestSchema = z.object({
+  url: z.string().url("Please enter a valid URL"),
+});
+
+export type ScrapeWebsiteRequest = z.infer<typeof scrapeWebsiteRequestSchema>;

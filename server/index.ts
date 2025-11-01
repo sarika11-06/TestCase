@@ -3,19 +3,10 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-
-declare module 'http' {
-  interface IncomingMessage {
-    rawBody: unknown
-  }
-}
-app.use(express.json({
-  verify: (req, _res, buf) => {
-    req.rawBody = buf;
-  }
-}));
+app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Request logging
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -34,11 +25,9 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
       if (logLine.length > 80) {
         logLine = logLine.slice(0, 79) + "…";
       }
-
       log(logLine);
     }
   });
@@ -46,36 +35,38 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add an Express error handler to log stack traces and return JSON in development
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+	// Log full error
+	console.error('[Express Error] ', err?.stack || err?.message || err);
+	if (!res.headersSent) {
+		res.status(500).json({ error: err?.message || 'Internal Server Error', stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined });
+	}
+});
+
+// Global process-level handlers
+process.on('uncaughtException', (err) => {
+	console.error('[Process] Uncaught Exception:', err?.stack || err?.message || err);
+	// don't exit in dev; consider graceful shutdown in production
+});
+
+process.on('unhandledRejection', (reason) => {
+	console.error('[Process] Unhandled Rejection:', reason);
+	// don't exit in dev; consider graceful shutdown in production
+});
+
 (async () => {
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+  server.listen(parseInt(process.env.PORT || "3000", 10), "localhost", () => {
+    log(`Server running on port ${process.env.PORT || 3000}`);
   });
 })();
+
+
