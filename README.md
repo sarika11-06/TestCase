@@ -1,126 +1,79 @@
 # AI Test Case Generator
 
-Automatically generate comprehensive test cases for any website using AI-powered analysis and Playwright automation.
+An intelligent test automation system that uses Gemini AI to generate, execute, and manage test cases for web applications.
 
-## 🚀 Quick Start
+## Features
 
-```bash
-# Install dependencies
-npm install
+- 🤖 **AI-Powered Parsing**: Uses Google Gemini to understand natural language test instructions
+- 🕷️ **Web Scraping**: Automatically scrapes interactive elements from any website
+- 📝 **Test Case Generation**: Generates test cases in XML and Playwright TypeScript formats
+- ▶️ **Live Execution**: Execute tests directly on live preview iframe
+- 🎯 **Smart Element Detection**: Intelligently matches UI elements from user prompts
+- 📊 **Site Analysis**: Provides comprehensive analysis of web pages
 
-# Set up environment
-cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+## Tech Stack
 
-# Start development server
-npm run dev
-```
+- **Frontend**: React, TypeScript, TailwindCSS, shadcn/ui
+- **Backend**: Node.js, Express
+- **AI**: Google Gemini Pro
+- **Automation**: Playwright, Puppeteer
+- **State Management**: TanStack Query
 
-Visit `http://localhost:3000`
+## Installation
 
-## 📁 Project Structure
+1. Clone the repository:
+    ```bash
+    git clone https://github.com/yourusername/ai-test-case-generator.git
+    cd ai-test-case-generator
+    ```
 
-```
-client/     → Frontend (React + TypeScript + Tailwind)
-server/     → Backend (Express + Playwright + OpenAI)
-shared/     → Shared TypeScript schemas
-```
+2. Install dependencies:
+    ```bash
+    npm install
+    ```
 
-See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed organization.
+3. Create `.env` file:
+    ```env
+    GEMINI_API_KEY=your_gemini_api_key_here
+    PORT=3000
+    ```
 
-## 🛠️ Available Scripts
+4. Start the development server:
+    ```bash
+    npm run dev
+    ```
 
-```bash
-npm run dev      # Start development server (frontend + backend)
-npm run build    # Build for production
-npm start        # Run production build
-npm run check    # TypeScript type checking
-```
+## Usage
 
-## 🏗️ Architecture
+1. **Enter URL**: Input the website you want to test
+2. **Scrape**: Click "1. Scrape" to analyze the page
+3. **Write Instructions**: Describe what you want to test (e.g., "click all navbar buttons")
+4. **Generate**: Click "2. Generate" to create test cases
+5. **Execute**: Run tests on the live preview
+6. **Download**: Get XML or Playwright TypeScript code
 
-### Frontend (Port 3000)
-- **React 18** with TypeScript
-- **TanStack Query** for API state management
-- **Tailwind CSS** + **shadcn UI** for styling
-- **Vite** for fast development
+## Example Prompts
 
-### Backend (Port 3000)
-- **Express.js** API server
-- **Playwright** for web scraping and screenshots
-- **OpenAI GPT** for test case generation
-- **File-based storage** for scraped XPath data
+- "Fill username with admin, click login"
+- "Check all links on the site"
+- "Test all forms"
+- "Click all navbar buttons"
 
-### Communication
-- Frontend makes API calls to `/api/*` endpoints
-- Backend responds with JSON
-- Shared TypeScript types ensure type safety
+## API Endpoints
 
-## 🔑 Environment Variables
+- `POST /api/scrape-website` - Scrape website elements
+- `POST /api/parse-instructions` - Parse natural language with Gemini
+- `POST /api/generate-test-cases` - Generate test cases
+- `POST /api/execute-test-flow` - Execute tests
 
-```env
-PORT=3000
-OPENAI_API_KEY=sk-...
-NODE_ENV=development
-```
+## Contributing
 
-## 🧪 Testing
+Pull requests are welcome! For major changes, please open an issue first.
 
-```bash
-npm test           # Run tests
-npm run test:ui    # Open Vitest UI
-```
-
-## 📦 Build for Production
-
-```bash
-# Build frontend and backend
-npm run build
-
-# Output:
-# - dist/public/    (frontend static files)
-# - dist/index.js   (backend bundle)
-
-# Run production server
-npm start
-```
-
-## 🎯 Features
-
-✅ Smart XPath scraping with Playwright  
-✅ AI-powered test case generation  
-✅ Live website preview  
-✅ Playwright code generation  
-✅ Export test cases  
-✅ Form and button detection  
-
-## 🔧 Tech Stack
-
-**Frontend:**
-- React 18, TypeScript
-- TanStack Query
-- Tailwind CSS
-- shadcn UI
-- React Hook Form + Zod
-
-**Backend:**
-- Node.js, Express
-- Playwright
-- OpenAI API
-- TypeScript
-
-**Shared:**
-- Zod schemas
-- TypeScript types
-
-## 📝 License
+## License
 
 MIT
 
-## 🤝 Contributing
+## Author
 
-1. Frontend changes → `client/src/`
-2. Backend changes → `server/`
-3. Shared types → `shared/schema.ts`
-4. Run `npm run check` before committing
-5. Keep components small and focused
+Your Name
