@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { db } from "./connection";
-import { websites, scrapeResults, testCases, executionResults } from "./schema";
-import type { NewWebsite, NewScrapeResult, NewTestCase, NewExecutionResult } from "./schema";
+import { websites, scrapeResults, testCases, executionResults, testExecutions, flakyTests } from "./schema";
+import type { NewWebsite, NewScrapeResult, NewTestCase, NewExecutionResult, NewTestExecution, NewFlakyTest, FlakyTest } from "./schema";
 
 // Helper function to extract domain and path from URL
 function parseUrl(url: string): { domain: string; path: string } {
@@ -169,5 +169,115 @@ export async function getExecutionResultsByUrl(url: string) {
   } catch (error) {
     console.error("Error in getExecutionResultsByUrl:", error);
     return [];
+  }
+}
+
+// ===== FLAKY TEST DETECTOR QUERIES =====
+
+// Get all test cases (for flaky test detection)
+export async function getAllTestCases() {
+  try {
+    return await db.select().from(testCases);
+  } catch (error) {
+    console.error("Error in getAllTestCases:", error);
+    return [];
+  }
+}
+
+// Get test case by testCaseId
+export async function getTestCaseByTestCaseId(testCaseId: string) {
+  try {
+    const results = await db.select().from(testCases).where(eq(testCases.testCaseId, testCaseId)).limit(1);
+    return results.length > 0 ? results[0] : undefined;
+  } catch (error) {
+    console.error("Error in getTestCaseByTestCaseId:", error);
+    return undefined;
+  }
+}
+
+// Create test execution
+export async function createTestExecution(data: NewTestExecution) {
+  try {
+    const created = await db.insert(testExecutions).values(data).returning();
+    return created[0];
+  } catch (error) {
+    console.error("Error in createTestExecution:", error);
+    throw error;
+  }
+}
+
+// Get test executions by test case ID
+export async function getTestExecutionsByTestCaseId(testCaseId: string) {
+  try {
+    return await db
+      .select()
+      .from(testExecutions)
+      .where(eq(testExecutions.testCaseId, testCaseId))
+      .orderBy(desc(testExecutions.executedAt));
+  } catch (error) {
+    console.error("Error in getTestExecutionsByTestCaseId:", error);
+    return [];
+  }
+}
+
+// Create flaky test
+export async function createFlakyTest(data: NewFlakyTest) {
+  try {
+    const created = await db.insert(flakyTests).values(data).returning();
+    return created[0];
+  } catch (error) {
+    console.error("Error in createFlakyTest:", error);
+    throw error;
+  }
+}
+
+// Get flaky test by test case ID
+export async function getFlakyTestByTestCaseId(testCaseId: string) {
+  try {
+    const results = await db.select().from(flakyTests).where(eq(flakyTests.testCaseId, testCaseId)).limit(1);
+    return results.length > 0 ? results[0] : undefined;
+  } catch (error) {
+    console.error("Error in getFlakyTestByTestCaseId:", error);
+    return undefined;
+  }
+}
+
+// Get all flaky tests (excluding resolved ones)
+export async function getAllFlakyTests() {
+  try {
+    return await db
+      .select()
+      .from(flakyTests)
+      .where(eq(flakyTests.isResolved, false))
+      .orderBy(desc(flakyTests.flakinessScore));
+  } catch (error) {
+    console.error("Error in getAllFlakyTests:", error);
+    return [];
+  }
+}
+
+// Get flaky test by ID
+export async function getFlakyTestById(id: number) {
+  try {
+    const results = await db.select().from(flakyTests).where(eq(flakyTests.id, id)).limit(1);
+    return results.length > 0 ? results[0] : undefined;
+  } catch (error) {
+    console.error("Error in getFlakyTestById:", error);
+    return undefined;
+  }
+}
+
+// Update flaky test
+export async function updateFlakyTest(id: number, updates: Partial<FlakyTest>) {
+  try {
+    const updated = await db
+      .update(flakyTests)
+      .set(updates)
+      .where(eq(flakyTests.id, id))
+      .returning();
+    return updated.length > 0 ? updated[0] : undefined;
+  } catch (error) {
+    console.error("Error in updateFlakyTest:", error);
+    return undefined;
   }
 }

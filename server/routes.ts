@@ -6,7 +6,9 @@ import { parseInstructions } from "./instructionParser";
 import { generateTestCases } from "./testCaseGenerator";
 import { saveXPathData, type StoredXPathData } from "./xpathStorage";
 import { inferSelectorForIntent } from "./selectorModel";
-import { saveScrapeResult, saveTestCases, saveExecutionResult } from "./db/queries";
+import { saveScrapeResult, saveTestCases, saveExecutionResult, getAllTestCases, getTestCaseByTestCaseId, createTestExecution, getTestExecutionsByTestCaseId, createFlakyTest, getFlakyTestByTestCaseId, getAllFlakyTests, getFlakyTestById, updateFlakyTest } from "./db/queries";
+import { FlakyTestAnalyzer } from "./flaky-analyzer";
+import { insertTestExecutionSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/parse-instructions", (req, res) => {
@@ -295,6 +297,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error('[DebugScrape] Error:', err);
       res.status(500).json({ error: err?.message || String(err) });
+    }
+  });
+
+  // ===== FLAKY TEST DETECTOR API ROUTES =====
+  const analyzer = new FlakyTestAnalyzer();
+
+  // Get all test cases
+  app.get("/api/test-cases", async (_req, res) => {
+    try {
+      const testCases = await getAllTestCases();
+      res.json(testCases);
+    } catch (error) {
+      console.error('[API] Error fetching test cases:', error);
+      res.status(500).json({ error: "Failed to fetch test cases" });
+    }
+  });
+
+  // Get test case by testCaseId
+  app.get("/api/test-cases/:testCaseId", async (req, res) => {
+    try {
+      const testCase = await getTestCaseByTestCaseId(req.params.testCaseId);
+      if (!testCase) {
+        return res.status(404).json({ error: "Test case not found" });
+      }
+      res.json(testCase);
+    } catch (error) {
+      console.error('[API] Error fetching test case:', error);
+      res.status(500).json({ error: "Failed to fetch test case" });
+    }
+  });
+
+  // Create test execution and analyze for flakiness
+  app.post("/api/test-executions", async (req, res) => {
+    try {
+      const parsed = insertTestExecutionSchema.parse(req.body);
+      const execution = await createTestExecution(parsed);
+
+      const allExecutions = await getTestExecutionsByTestCaseId(parsed.testCaseId);
+
+      if (allExecutions.length >= 5) {
+        const analysis = analyzer.analyze(allExecutions);
+
+        if (analysis.isFlakey) {
+          const existingFlakyTest = await getFlakyTestByTestCaseId(parsed.testCaseId);
+
+          if (existingFlakyTest) {
+            await updateFlakyTest(existingFlakyTest.id, {
+              flakinessScore: analysis.flakinessScore,
+              timingVariance: analysis.timingVariance,
+              failureRate: analysis.failureRate,
+              totalRuns: allExecutions.length,
+              failedRuns: allExecutions.filter((e) => e.status === "failed").length,
+              rootCauses: analysis.rootCauses,
+              lastFailedAt: parsed.status === "failed" ? new Date() : existingFlakyTest.lastFailedAt,
+            });
+          } else {
+            await createFlakyTest({
+              testCaseId: parsed.testCaseId,
+              flakinessScore: analysis.flakinessScore,
+              timingVariance: analysis.timingVariance,
+              failureRate: analysis.failureRate,
+              totalRuns: allExecutions.length,
+              failedRuns: allExecutions.filter((e) => e.status === "failed").length,
+              rootCauses: analysis.rootCauses,
+              lastFailedAt: parsed.status === "failed" ? new Date() : null,
+              isResolved: false,
+            });
+          }
+        }
+      }
+
+      res.status(201).json(execution);
+    } catch (error) {
+      console.error('[API] Error creating test execution:', error);
+      res.status(400).json({ error: "Invalid execution data" });
+    }
+  });
+
+  // Get executions for a test case
+  app.get("/api/test-cases/:testCaseId/executions", async (req, res) => {
+    try {
+      const executions = await getTestExecutionsByTestCaseId(req.params.testCaseId);
+      res.json(executions);
+    } catch (error) {
+      console.error('[API] Error fetching executions:', error);
+      res.status(500).json({ error: "Failed to fetch executions" });
+    }
+  });
+
+  // Get all flaky tests
+  app.get("/api/flaky-tests", async (_req, res) => {
+    try {
+      const flakyTests = await getAllFlakyTests();
+      res.json(flakyTests);
+    } catch (error) {
+      console.error('[API] Error fetching flaky tests:', error);
+      res.status(500).json({ error: "Failed to fetch flaky tests" });
+    }
+  });
+
+  // Get flaky test details by ID
+  app.get("/api/flaky-tests/:id", async (req, res) => {
+    try {
+      const flakyTest = await getFlakyTestById(parseInt(req.params.id));
+      if (!flakyTest) {
+        return res.status(404).json({ error: "Flaky test not found" });
+      }
+      res.json(flakyTest);
+    } catch (error) {
+      console.error('[API] Error fetching flaky test:', error);
+      res.status(500).json({ error: "Failed to fetch flaky test" });
+    }
+  });
+
+  // Mark flaky test as resolved
+  app.patch("/api/flaky-tests/:id/resolve", async (req, res) => {
+    try {
+      const updated = await updateFlakyTest(parseInt(req.params.id), { isResolved: true });
+      if (!updated) {
+        return res.status(404).json({ error: "Flaky test not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error('[API] Error updating flaky test:', error);
+      res.status(500).json({ error: "Failed to update flaky test" });
+    }
+  });
+
+  // Get dashboard stats
+  app.get("/api/dashboard/stats", async (_req, res) => {
+    try {
+      const allTestCases = await getAllTestCases();
+      const allFlakyTests = await getAllFlakyTests();
+
+      const totalTests = allTestCases.length;
+      const flakyTestCount = allFlakyTests.length;
+      const flakyPercentage = totalTests > 0 ? (flakyTestCount / totalTests) * 100 : 0;
+
+      res.json({
+        totalTests,
+        flakyTestCount,
+        flakyPercentage: Math.round(flakyPercentage * 10) / 10,
+      });
+    } catch (error) {
+      console.error('[API] Error fetching stats:', error);
+      res.status(500).json({ error: "Failed to fetch stats" });
     }
   });
 
