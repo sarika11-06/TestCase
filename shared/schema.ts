@@ -26,6 +26,61 @@ export const testCaseSchema = z.object({
 
 export type TestCase = z.infer<typeof testCaseSchema>;
 
+// Root Cause Schema for Flaky Test Analysis
+export const rootCauseSchema = z.object({
+  type: z.enum(["timing", "dom", "resource", "concurrency"]),
+  confidence: z.number().min(0).max(100),
+  description: z.string(),
+});
+
+export type RootCause = z.infer<typeof rootCauseSchema>;
+
+// Test Execution Schema (matches database schema with serial ID)
+export const testExecutionSchema = z.object({
+  id: z.number(),
+  testCaseId: z.string(),
+  status: z.enum(["passed", "failed"]),
+  executionTime: z.number(),
+  domStabilityScore: z.number().nullable(),
+  waitConditionFailures: z.number().nullable(),
+  networkCallCount: z.number().nullable(),
+  errorMessage: z.string().nullable(),
+  executedAt: z.date(),
+});
+
+export type TestExecution = z.infer<typeof testExecutionSchema>;
+
+export const insertTestExecutionSchema = z.object({
+  testCaseId: z.string(),
+  status: z.enum(["passed", "failed"]),
+  executionTime: z.number(),
+  domStabilityScore: z.number().optional().nullable(),
+  waitConditionFailures: z.number().optional().nullable(),
+  networkCallCount: z.number().optional().nullable(),
+  errorMessage: z.string().optional().nullable(),
+});
+export type InsertTestExecution = z.infer<typeof insertTestExecutionSchema>;
+
+// Flaky Test Schema (matches database schema with serial ID)
+export const flakyTestSchema = z.object({
+  id: z.number(),
+  testCaseId: z.string(),
+  flakinessScore: z.number().min(0).max(100),
+  timingVariance: z.number(),
+  failureRate: z.number(),
+  totalRuns: z.number(),
+  failedRuns: z.number(),
+  rootCauses: z.array(rootCauseSchema),
+  lastFailedAt: z.date().nullable(),
+  isResolved: z.boolean(),
+  detectedAt: z.date(),
+});
+
+export type FlakyTest = z.infer<typeof flakyTestSchema>;
+
+export const insertFlakyTestSchema = flakyTestSchema.omit({ id: true, detectedAt: true });
+export type InsertFlakyTest = z.infer<typeof insertFlakyTestSchema>;
+
 // Website Analysis Schema
 export const websiteAnalysisSchema = z.object({
   url: z.string(),
