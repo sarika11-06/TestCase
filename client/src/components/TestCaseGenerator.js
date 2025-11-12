@@ -12,9 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { generateTestCasesRequestSchema } from "../../../shared/schema";
+import { generateForFrontend } from "../../../generator";
 export default function TestCaseGenerator() {
     const [scrapedAnalysis, setScrapedAnalysis] = useState(null);
     const [generatedData, setGeneratedData] = useState(null);
+    const [testCaseOutputs, setTestCaseOutputs] = useState({});
+    const [parsedActions, setParsedActions] = useState(null); // NEW: Store Gemini parsed actions
     const [expandedTestCase, setExpandedTestCase] = useState(null);
     const [executing, setExecuting] = useState(false);
     const [executionResults, setExecutionResults] = useState(null);
@@ -60,6 +63,38 @@ export default function TestCaseGenerator() {
             toast({ title: "Scraping failed", description: error.message, variant: "destructive" });
         },
     });
+    // Parse instructions with Gemini (with scraped context)
+    const parseInstructionsMutation = useMutation({
+        mutationFn: async ({ prompt, url, scrapedData }) => {
+            const response = await apiRequest("POST", "/api/parse-instructions", { 
+                prompt, 
+                url,
+                scrapedData 
+            });
+            return await response.json();
+        },
+        onSuccess: (data) => {
+            const mappedActions = (data.actions || []).map(a => ({
+                ...a,
+                element: a.element || a.intent || a.elementType || "unknown"
+            }));
+            setParsedActions(mappedActions);
+            console.log('[Parse] Gemini parsed actions:', mappedActions);
+            toast({
+                title: "✓ Instructions parsed with AI",
+                description: `Understood ${mappedActions.length} actions from page context`,
+            });
+        },
+        onError: (error) => {
+            console.error('[Parse] Error:', error);
+            setParsedActions(null); // Clear on error, will fallback to regex
+            toast({ 
+                title: "AI parsing failed, using fallback", 
+                description: "Will use regex parsing instead",
+                variant: "default" 
+            });
+        },
+    });
     // Generate test cases
     const generateMutation = useMutation({
         mutationFn: async (data) => {
@@ -68,6 +103,110 @@ export default function TestCaseGenerator() {
         },
         onSuccess: (data) => {
             setGeneratedData(data);
+
+            // Defensive: If no testCases or steps, show a toast and return
+            if (!data.testCases || !Array.isArray(data.testCases) || data.testCases.length === 0) {
+                toast({ title: "No test cases generated", description: "Gemini could not extract actionable steps from your prompt.", variant: "destructive" });
+                setTestCaseOutputs({});
+                return;
+            }
+
+            const outputs = {};
+            data.testCases.forEach((tc) => {
+                // Defensive: If no steps, skip this test case
+                if (!tc.steps || !Array.isArray(tc.steps) || tc.steps.length === 0) return;
+
+                // Convert test case to TestCase format
+                const testCase = {
+                    id: tc.id,
+                    name: tc.title,
+                    desc: tc.type,
+                    steps: tc.steps.map((step, idx) => {
+                        let action = "Action";
+                        let element = "ELEMENT";
+                        let data = "";
+
+                        // Defensive: If parsedActions is missing or incomplete, fallback to regex
+                        if (parsedActions && parsedActions[idx]) {
+                            const parsed = parsedActions[idx];
+                            // Defensive: check for required fields
+                            if (!parsed.type || !parsed.element) {
+                                action = "Action";
+                                element = "ELEMENT";
+                            } else {
+                                action = parsed.type === "fill" ? "EnterText" : 
+                                        parsed.type === "click" ? "Click" : 
+                                        parsed.type === "verify" ? "VerifyText" : "Action";
+                                element = parsed.element.replace(/\s+/g, '');
+                                data = parsed.value || "";
+                            }
+                        } else {
+                            // FALLBACK: Use regex parsing if Gemini not available
+                            console.log(`[Generate] Using regex fallback for step ${idx}`);
+                            const fillMatch = step.match(/(?:fill|enter|type)\s+["']?([^"']+?)["']?\s+(?:with\s+)?["']?([^"']+)["']?/i);
+                            const clickMatch = step.match(/click\s+["']?([^"']+)["']?/i);
+
+                            if (fillMatch) {
+                                action = "EnterText";
+                                element = fillMatch[1].trim().replace(/\s+/g, '');
+                                data = fillMatch[2]?.trim() || "";
+                            } else if (clickMatch) {
+                                action = "Click";
+                                element = clickMatch[1].trim().replace(/\s+/g, '');
+                            }
+                        }
+
+                        return {
+                            id: `${idx + 1}`,
+                            Page: "TestPage",
+                            Action: action,
+                            Element: element,
+                            Data: data,
+                            Expected: step,
+                        };
+                    }).filter(s => s && s.Action !== "Action" && s.Element !== "ELEMENT"), // Filter out invalid steps
+                };
+
+                // Defensive: Only add if there are valid steps
+                if (testCase.steps.length === 0) return;
+
+                const { playwrightTs, xml } = generateForFrontend(testCase);
+
+                const downloadXML = () => {
+                    const blob = new Blob([xml], { type: "application/xml" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${testCase.name.replace(/\s+/g, "_")}.xml`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
+
+                const downloadPlaywright = () => {
+                    const blob = new Blob([playwrightTs], { type: "text/plain" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${testCase.name.replace(/\s+/g, "_")}.spec.ts`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
+
+                outputs[tc.id] = {
+                    xmlCode: xml,
+                    playwrightCode: playwrightTs,
+                    downloadXML,
+                    downloadPlaywright,
+                };
+            });
+
+            // Defensive: If no outputs, show a toast
+            if (Object.keys(outputs).length === 0) {
+                toast({ title: "No valid test steps found", description: "Gemini did not return actionable steps for your prompt.", variant: "destructive" });
+            }
+
+            setTestCaseOutputs(outputs);
+
             toast({ title: "Test cases generated!", description: `Generated ${data.summary.totalTests} tests` });
         },
         onError: (error) => {
@@ -151,14 +290,55 @@ export default function TestCaseGenerator() {
         // First scrape
         scrapeMutation.mutate({ url, prompt });
     };
-    const handleGenerate = () => {
+    // Modified handleGenerate to send only essential scraped data
+    const handleGenerate = async () => {
         const url = form.getValues("url");
         const prompt = form.getValues("prompt");
+        
         if (!url || !prompt) {
             toast({ title: "Enter URL and prompt", variant: "destructive" });
             return;
         }
-        generateMutation.mutate({ url, prompt });
+
+        if (!scrapedAnalysis) {
+            toast({ 
+                title: "Scrape first", 
+                description: "Click '1. Scrape' to analyze the page before generating",
+                variant: "destructive" 
+            });
+            return;
+        }
+
+        try {
+            console.log('[Generate] Step 1: Parsing with page context...');
+            
+            // Send only essential data (buttons and fields) to reduce payload size
+            const essentialScrapedData = {
+                url: scrapedAnalysis.url,
+                title: scrapedAnalysis.title,
+                allInteractive: (scrapedAnalysis.allInteractive || []).map(el => ({
+                    tag: el.tag,
+                    type: el.type,
+                    text: el.text,
+                    name: el.name,
+                    id: el.id,
+                    friendlyName: el.friendlyName,
+                    placeholder: el.placeholder
+                })).slice(0, 50) // Limit to first 50 elements
+            };
+            
+            await parseInstructionsMutation.mutateAsync({ 
+                prompt, 
+                url,
+                scrapedData: essentialScrapedData 
+            });
+            
+            console.log('[Generate] Step 2: Generating test cases...');
+            generateMutation.mutate({ url, prompt });
+        } catch (error) {
+            console.log('[Generate] Parsing failed, continuing with fallback');
+            generateMutation.mutate({ url, prompt });
+        }
     };
     // Execute test cases
     const executeTestCases = async () => {
@@ -403,7 +583,10 @@ export default function TestCaseGenerator() {
             suggestedFlows
         };
     }
-    return (_jsx("div", { className: "min-h-screen bg-background p-4", children: _jsxs("div", { className: "max-w-[98vw] mx-auto", children: [_jsxs("div", { className: "mb-4 text-center", children: [_jsx("h1", { className: "text-3xl font-bold mb-2", children: "AI Test Case Generator" }), _jsx("p", { className: "text-muted-foreground", children: "Enter URL and instructions to scrape XPaths and generate test cases" })] }), _jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-[40%_60%] gap-4", children: [_jsxs("div", { className: "space-y-4 overflow-y-auto max-h-[calc(100vh-8rem)]", children: [_jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Website & Instructions" }), _jsx(CardDescription, { className: "text-xs", children: "Enter the URL and describe what you want to test" })] }), _jsxs(CardContent, { className: "space-y-3", children: [_jsxs("div", { children: [_jsx("label", { className: "text-xs font-medium", children: "Website URL" }), _jsx(Input, { placeholder: "https://example.com/login", value: form.watch("url"), onChange: (e) => form.setValue("url", e.target.value), className: "text-sm" })] }), _jsxs("div", { children: [_jsx("label", { className: "text-xs font-medium", children: "Testing Instructions" }), _jsx(Textarea, { placeholder: "e.g., Fill username and password, then click Login button", value: form.watch("prompt"), onChange: (e) => form.setValue("prompt", e.target.value), rows: 4, className: "text-sm" }), _jsx("p", { className: "text-[10px] text-muted-foreground mt-1", children: "Mention fields (username, password) and buttons (login, submit) you want to test" })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: handleScrapeAndGenerate, disabled: scrapeMutation.isPending, className: "flex-1 text-xs h-9", children: scrapeMutation.isPending ? _jsxs(_Fragment, { children: [_jsx(Loader2, { className: "w-3 h-3 mr-1 animate-spin" }), "Scraping..."] }) : "1. Scrape" }), _jsx(Button, { onClick: handleGenerate, disabled: !scrapedAnalysis || generateMutation.isPending, variant: "secondary", className: "flex-1 text-xs h-9", children: generateMutation.isPending ? _jsxs(_Fragment, { children: [_jsx(Loader2, { className: "w-3 h-3 mr-1 animate-spin" }), "Generating..."] }) : "2. Generate" })] })] })] }), _jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Scraped Elements" }), _jsx(CardDescription, { className: "text-xs", children: scrapedAnalysis ?
+    return (_jsx("div", { className: "min-h-screen bg-background p-4", children: _jsxs("div", { className: "max-w-[98vw] mx-auto", children: [_jsxs("div", { className: "mb-4 text-center", children: [_jsx("h1", { className: "text-3xl font-bold mb-2", children: "AI Test Case Generator" }), _jsx("p", { className: "text-muted-foreground", children: "Enter URL and instructions to scrape XPaths and generate test cases" })] }), _jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-[40%_60%] gap-4", children: [_jsxs("div", { className: "space-y-4 overflow-y-auto max-h-[calc(100vh-8rem)]", children: [_jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Website & Instructions" }), _jsx(CardDescription, { className: "text-xs", children: "Enter the URL and describe what you want to test" })] }), _jsxs(CardContent, { className: "space-y-3", children: [_jsxs("div", { children: [_jsx("label", { className: "text-xs font-medium", children: "Website URL" }), _jsx(Input, { placeholder: "https://example.com/login", value: form.watch("url"), onChange: (e) => form.setValue("url", e.target.value), className: "text-sm" })] }), _jsxs("div", { children: [_jsx("label", { className: "text-xs font-medium", children: "Testing Instructions" }), _jsx(Textarea, { placeholder: "e.g., Fill username and password, then click Login button", value: form.watch("prompt"), onChange: (e) => form.setValue("prompt", e.target.value), rows: 4, className: "text-sm" }), _jsx("p", { className: "text-[10px] text-muted-foreground mt-1", children: "Mention fields (username, password) and buttons (login, submit) you want to test" })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: handleScrapeAndGenerate, disabled: scrapeMutation.isPending, className: "flex-1 text-xs h-9", children: scrapeMutation.isPending ? _jsxs(_Fragment, { children: [_jsx(Loader2, { className: "w-3 h-3 mr-1 animate-spin" }), "Scraping..."] }) : "1. Scrape" }), _jsx(Button, { onClick: handleGenerate, disabled: !scrapedAnalysis || generateMutation.isPending || parseInstructionsMutation.isPending, variant: "secondary", className: "flex-1 text-xs h-9", children: (generateMutation.isPending || parseInstructionsMutation.isPending) ? _jsxs(_Fragment, { children: [
+                                    _jsx(Loader2, { className: "w-3 h-3 mr-1 animate-spin" }), 
+                                    parseInstructionsMutation.isPending ? "Parsing..." : "Generating..."
+                                ] }) : "2. Generate" })] })] })] }), _jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Scraped Elements" }), _jsx(CardDescription, { className: "text-xs", children: scrapedAnalysis ?
                                                         `${(scrapedAnalysis.allInteractive || []).filter((e) => ['input', 'textarea', 'select'].includes(e.tag)).length} fields, ${(scrapedAnalysis.allInteractive || []).filter((e) => ['button', 'a'].includes(e.tag) || (e.type && e.type.toLowerCase() === 'submit')).length} buttons`
                                                         : 'Waiting for scrape...' })] }), _jsxs(CardContent, { children: [!scrapedAnalysis && _jsx("div", { className: "text-xs text-muted-foreground text-center py-4", children: "Enter URL and prompt, then click \"Scrape\"" }), scrapedAnalysis && (_jsx("div", { className: "space-y-2 max-h-[200px] overflow-y-auto", children: (scrapedAnalysis.forms && scrapedAnalysis.forms.length > 0) ? (scrapedAnalysis.forms.map((form, fi) => (_jsxs("div", { children: [_jsxs("div", { className: "font-semibold text-xs mb-1", children: ["\uD83D\uDCDD ", form.name] }), form.fields.map((field, i) => {
                                                                 var _a;
@@ -419,7 +602,28 @@ export default function TestCaseGenerator() {
                                                                 }) })] }), analysisSummary.suggestedFlows.length > 0 && (_jsxs("div", { children: [_jsx("strong", { children: "Suggested flows:" }), _jsx("ol", { className: "list-decimal list-inside text-xs mt-1", children: analysisSummary.suggestedFlows.map((s, idx) => _jsx("li", { children: s }, idx)) })] })), _jsxs("div", { className: "mt-2 flex gap-2", children: [_jsx(Button, { size: "sm", variant: "outline", onClick: () => console.log('Full analysis:', scrapedAnalysis), children: "Print full analysis to console" }), _jsx(Button, { size: "sm", onClick: () => {
                                                                     navigator.clipboard.writeText(JSON.stringify({ analysis: scrapedAnalysis, summary: analysisSummary }, null, 2));
                                                                     toast({ title: 'Copied summary to clipboard' });
-                                                                }, children: "Copy summary" })] })] }) })] })), generatedData && (_jsxs(Card, { children: [_jsx(CardHeader, { className: "pb-3", children: _jsxs(CardTitle, { className: "text-lg", children: ["Generated Test Cases (", generatedData.summary.totalTests, ")"] }) }), _jsx(CardContent, { children: _jsx("div", { className: "space-y-2", children: generatedData.testCases.map((tc) => (_jsxs(Card, { children: [_jsx(CardHeader, { className: "pb-2 pt-3", children: _jsxs("div", { className: "flex items-start justify-between", children: [_jsxs("div", { className: "flex-1", children: [_jsx("div", { className: "font-medium text-xs", children: tc.title }), _jsxs("div", { className: "flex gap-1.5 mt-1", children: [_jsx(Badge, { variant: "outline", className: "text-[9px] h-4 px-1.5", children: tc.type }), _jsx(Badge, { variant: "outline", className: "text-[9px] h-4 px-1.5", children: tc.priority })] })] }), _jsx(Button, { size: "icon", variant: "ghost", onClick: () => setExpandedTestCase(expandedTestCase === tc.id ? null : tc.id), className: "h-6 w-6", children: expandedTestCase === tc.id ? _jsx(ChevronUp, { className: "w-3 h-3" }) : _jsx(ChevronDown, { className: "w-3 h-3" }) })] }) }), expandedTestCase === tc.id && (_jsxs(CardContent, { className: "pt-0 pb-3", children: [_jsxs("div", { className: "space-y-1.5 text-[10px] mb-2", children: [_jsx("div", { children: _jsx("strong", { children: "Steps:" }) }), _jsx("ol", { className: "list-decimal list-inside space-y-0.5", children: tc.steps.map((s, i) => _jsx("li", { children: s }, i)) })] }), _jsx("div", { className: "text-[9px] font-semibold mb-1", children: "Playwright Code:" }), _jsx("pre", { className: "bg-[#1f2937] text-[#e5e7eb] p-2 rounded text-[9px] overflow-auto max-h-32", children: _jsx("code", { children: tc.playwrightCode }) })] }))] }, tc.id))) }) })] })), generatedData && (_jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Execute Tests" }), _jsx(CardDescription, { className: "text-xs", children: "Run the generated test cases on the live preview" })] }), _jsx(CardContent, { children: _jsx(Button, { onClick: executeTestCasesOnPreview, disabled: executing || !previewBlobUrl, size: "lg", className: "w-full gap-2 h-10", children: executing ? (_jsxs(_Fragment, { children: [_jsx(Loader2, { className: "w-4 h-4 animate-spin" }), "Executing..."] })) : (_jsxs(_Fragment, { children: [_jsx(PlayCircle, { className: "w-4 h-4" }), "\u25B6\uFE0F Execute on Live Preview"] })) }) })] })), executionResults && (_jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Execution Results" }), _jsx(CardDescription, { className: "text-xs", children: "Test execution completed" })] }), _jsx(CardContent, { children: _jsxs("div", { className: "space-y-2", children: [_jsxs("div", { className: "flex items-center justify-between p-2 bg-muted rounded-lg", children: [_jsxs("div", { children: [_jsx("div", { className: "text-xs font-medium", children: "Execution Summary" }), _jsxs("div", { className: "text-[9px] text-muted-foreground", children: [executionResults.summary.successful, " / ", executionResults.summary.total, " steps passed"] })] }), _jsx(Badge, { variant: executionResults.success ? "default" : "destructive", className: "text-sm px-2 py-0.5", children: executionResults.success ? "✓ Passed" : "✗ Failed" })] }), executionResults.results.map((r, i) => (_jsx("div", { className: `p-2 border rounded-lg ${r.success ? "border-green-500 bg-green-50" : "border-red-500 bg-red-50"}`, children: _jsxs("div", { className: "flex items-start gap-2", children: [r.success ? (_jsx(CheckCircle, { className: "w-3 h-3 text-green-500 flex-shrink-0 mt-0.5" })) : (_jsx(XCircle, { className: "w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" })), _jsxs("div", { className: "flex-1", children: [_jsxs("div", { className: "font-medium text-[10px] mb-0.5", children: ["Step ", r.step] }), _jsx("div", { className: "text-[9px] text-muted-foreground mb-0.5", children: r.instruction }), _jsxs("div", { className: "text-[9px]", children: [_jsx("span", { className: "font-semibold", children: "Result:" }), " ", r.reasoning] }), r.selector && (_jsx("code", { className: "text-[8px] bg-white px-1 py-0.5 rounded mt-0.5 inline-block", children: r.selector }))] })] }) }, i)))] }) })] }))] }), _jsx("div", { className: "lg:sticky lg:top-4 lg:h-[calc(100vh-6rem)]", children: _jsxs(Card, { className: "h-full flex flex-col", children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsxs(CardTitle, { className: "flex items-center justify-between text-lg", children: [_jsx("span", { children: "Live Preview" }), _jsx("div", { className: "flex gap-2", children: _jsx(Button, { size: "sm", variant: "outline", onClick: () => {
+                                                                }, children: "Copy summary" })] })] }) })] })), generatedData && (_jsxs(Card, { children: [_jsx(CardHeader, { className: "pb-3", children: _jsxs(CardTitle, { className: "text-lg", children: ["Generated Test Cases (", generatedData.summary.totalTests, ")"] }) }), _jsx(CardContent, { children: _jsx("div", { className: "space-y-2", children: generatedData.testCases.map((tc) => (_jsxs(Card, { children: [_jsx(CardHeader, { className: "pb-2 pt-3", children: _jsxs("div", { className: "flex items-start justify-between", children: [_jsxs("div", { className: "flex-1", children: [_jsx("div", { className: "font-medium text-xs", children: tc.title }), _jsxs("div", { className: "flex gap-1.5 mt-1", children: [_jsx(Badge, { variant: "outline", className: "text-[9px] h-4 px-1.5", children: tc.type }), _jsx(Badge, { variant: "outline", className: "text-[9px] h-4 px-1.5", children: tc.priority })] })] }), _jsx(Button, { size: "icon", variant: "ghost", onClick: () => setExpandedTestCase(expandedTestCase === tc.id ? null : tc.id), className: "h-6 w-6", children: expandedTestCase === tc.id ? _jsx(ChevronUp, { className: "w-3 h-3" }) : _jsx(ChevronDown, { className: "w-3 h-3" }) })] }) }), expandedTestCase === tc.id && testCaseOutputs[tc.id] && (_jsxs(CardContent, { className: "pt-0 pb-3", children: [
+                                _jsxs("div", { className: "space-y-1.5 text-[10px] mb-2", children: [
+                                    _jsx("div", { children: _jsx("strong", { children: "Steps:" }) }),
+                                    _jsx("ol", { className: "list-decimal list-inside space-y-0.5", children: tc.steps.map((s, i) => _jsx("li", { children: s }, i)) })
+                                ] }),
+                                _jsxs("div", { className: "flex items-center justify-between mb-1", children: [
+                                    _jsx("div", { className: "text-[9px] font-semibold", children: "Playwright Code:" }),
+                                    _jsxs(Button, { size: "sm", variant: "outline", onClick: testCaseOutputs[tc.id].downloadPlaywright, className: "h-6 text-[9px] px-2 gap-1", children: [
+                                        _jsx("svg", { className: "w-3 h-3", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", children: _jsx("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m4-5l5 5 5-5m-5 5V3", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }),
+                                        ".ts"
+                                    ] })
+                                ] }),
+                                _jsx("pre", { className: "bg-[#1f2937] text-[#e5e7eb] p-2 rounded text-[9px] overflow-auto max-h-32 mb-3", children: _jsx("code", { children: testCaseOutputs[tc.id].playwrightCode }) }),
+                                _jsxs("div", { className: "flex items-center justify-between mb-1", children: [
+                                    _jsx("div", { className: "text-[9px] font-semibold", children: "XML Format:" }),
+                                    _jsxs(Button, { size: "sm", variant: "outline", onClick: testCaseOutputs[tc.id].downloadXML, className: "h-6 text-[9px] px-2 gap-1", children: [
+                                        _jsx("svg", { className: "w-3 h-3", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", children: _jsx("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m4-5l5 5 5-5m-5 5V3", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }),
+                                        ".xml"
+                                    ] })
+                                ] }),
+                                _jsx("pre", { className: "bg-[#1f2937] text-[#e5e7eb] p-2 rounded text-[9px] overflow-auto max-h-32", children: _jsx("code", { children: testCaseOutputs[tc.id].xmlCode }) })
+                            ] }))] }, tc.id))) }) })] })), generatedData && (_jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Execute Tests" }), _jsx(CardDescription, { className: "text-xs", children: "Run the generated test cases on the live preview" })] }), _jsx(CardContent, { children: _jsx(Button, { onClick: executeTestCasesOnPreview, disabled: executing || !previewBlobUrl, size: "lg", className: "w-full gap-2 h-10", children: executing ? (_jsxs(_Fragment, { children: [_jsx(Loader2, { className: "w-4 h-4 animate-spin" }), "Executing..."] })) : (_jsxs(_Fragment, { children: [_jsx(PlayCircle, { className: "w-4 h-4" }), "\u25B6\uFE0F Execute on Live Preview"] })) }) })] })), executionResults && (_jsxs(Card, { children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsx(CardTitle, { className: "text-lg", children: "Execution Results" }), _jsx(CardDescription, { className: "text-xs", children: "Test execution completed" })] }), _jsx(CardContent, { children: _jsxs("div", { className: "space-y-2", children: [_jsxs("div", { className: "flex items-center justify-between p-2 bg-muted rounded-lg", children: [_jsxs("div", { children: [_jsx("div", { className: "text-xs font-medium", children: "Execution Summary" }), _jsxs("div", { className: "text-[9px] text-muted-foreground", children: [executionResults.summary.successful, " / ", executionResults.summary.total, " steps passed"] })] }), _jsx(Badge, { variant: executionResults.success ? "default" : "destructive", className: "text-sm px-2 py-0.5", children: executionResults.success ? "✓ Passed" : "✗ Failed" })] }), executionResults.results.map((r, i) => (_jsx("div", { className: `p-2 border rounded-lg ${r.success ? "border-green-500 bg-green-50" : "border-red-500 bg-red-50"}`, children: _jsxs("div", { className: "flex items-start gap-2", children: [r.success ? (_jsx(CheckCircle, { className: "w-3 h-3 text-green-500 flex-shrink-0 mt-0.5" })) : (_jsx(XCircle, { className: "w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" })), _jsxs("div", { className: "flex-1", children: [_jsxs("div", { className: "font-medium text-[10px] mb-0.5", children: ["Step ", r.step] }), _jsx("div", { className: "text-[9px] text-muted-foreground mb-0.5", children: r.instruction }), _jsxs("div", { className: "text-[9px]", children: [_jsx("span", { className: "font-semibold", children: "Result:" }), " ", r.reasoning] }), r.selector && (_jsx("code", { className: "text-[8px] bg-white px-1 py-0.5 rounded mt-0.5 inline-block", children: r.selector }))] })] }) }, i)))] }) })] }))] }), _jsx("div", { className: "lg:sticky lg:top-4 lg:h-[calc(100vh-6rem)]", children: _jsxs(Card, { className: "h-full flex flex-col", children: [_jsxs(CardHeader, { className: "pb-3", children: [_jsxs(CardTitle, { className: "flex items-center justify-between text-lg", children: [_jsx("span", { children: "Live Preview" }), _jsx("div", { className: "flex gap-2", children: _jsx(Button, { size: "sm", variant: "outline", onClick: () => {
                                                                 const url = form.getValues("url");
                                                                 if (url)
                                                                     fetchPreview(url);
