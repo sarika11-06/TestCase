@@ -34,11 +34,7 @@ export async function getOrCreateWebsite(url: string) {
       path,
     };
 
-    const result = await db.insert(websites).values(newWebsite);
-    const insertId = Number(result[0].insertId);
-    
-    // Fetch and return the created website
-    const created = await db.select().from(websites).where(eq(websites.id, insertId)).limit(1);
+    const created = await db.insert(websites).values(newWebsite).returning();
     return created[0];
   } catch (error) {
     console.error("Error in getOrCreateWebsite:", error);
@@ -64,10 +60,7 @@ export async function saveScrapeResult(data: {
       interactiveElementsCount: data.interactiveElementsCount,
     };
 
-    const result = await db.insert(scrapeResults).values(newScrapeResult);
-    const insertId = Number(result[0].insertId);
-    
-    const created = await db.select().from(scrapeResults).where(eq(scrapeResults.id, insertId)).limit(1);
+    const created = await db.insert(scrapeResults).values(newScrapeResult).returning();
     return created[0];
   } catch (error) {
     console.error("Error in saveScrapeResult:", error);
@@ -122,17 +115,14 @@ export async function saveExecutionResult(data: {
       scrapeResultId: data.scrapeResultId,
       url: data.url,
       prompt: data.prompt,
-      success: data.success ? 1 : 0,
+      success: data.success,
       totalActions: data.totalActions,
       successfulActions: data.successfulActions,
       results: data.results,
       screenshot: data.screenshot,
     };
 
-    const result = await db.insert(executionResults).values(newExecutionResult);
-    const insertId = Number(result[0].insertId);
-    
-    const created = await db.select().from(executionResults).where(eq(executionResults.id, insertId)).limit(1);
+    const created = await db.insert(executionResults).values(newExecutionResult).returning();
     return created[0];
   } catch (error) {
     console.error("Error in saveExecutionResult:", error);

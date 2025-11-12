@@ -1,8 +1,8 @@
-import { mysqlTable, varchar, text, timestamp, int, json, bigint } from "drizzle-orm/mysql-core";
+import { pgTable, serial, varchar, text, timestamp, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 
 // Websites table - stores unique URLs that have been tested
-export const websites = mysqlTable("websites", {
-  id: bigint("id", { mode: "number" }).primaryKey().autoincrement(),
+export const websites = pgTable("websites", {
+  id: serial("id").primaryKey(),
   url: varchar("url", { length: 500 }).notNull().unique(),
   domain: varchar("domain", { length: 255 }).notNull(),
   path: varchar("path", { length: 500 }),
@@ -11,44 +11,44 @@ export const websites = mysqlTable("websites", {
 });
 
 // Scrape Results - stores scraped website analysis data
-export const scrapeResults = mysqlTable("scrape_results", {
-  id: bigint("id", { mode: "number" }).primaryKey().autoincrement(),
-  websiteId: bigint("website_id", { mode: "number" }).notNull(),
+export const scrapeResults = pgTable("scrape_results", {
+  id: serial("id").primaryKey(),
+  websiteId: integer("website_id").notNull().references(() => websites.id),
   url: varchar("url", { length: 500 }).notNull(),
   prompt: text("prompt").notNull(),
-  analysisData: json("analysis_data"),
-  interactiveElementsCount: int("interactive_elements_count"),
+  analysisData: jsonb("analysis_data"),
+  interactiveElementsCount: integer("interactive_elements_count"),
   scrapedAt: timestamp("scraped_at").notNull().defaultNow(),
 });
 
 // Test Cases - stores generated test cases
-export const testCases = mysqlTable("test_cases", {
-  id: bigint("id", { mode: "number" }).primaryKey().autoincrement(),
-  scrapeResultId: bigint("scrape_result_id", { mode: "number" }).notNull(),
-  websiteId: bigint("website_id", { mode: "number" }).notNull(),
+export const testCases = pgTable("test_cases", {
+  id: serial("id").primaryKey(),
+  scrapeResultId: integer("scrape_result_id").notNull().references(() => scrapeResults.id),
+  websiteId: integer("website_id").notNull().references(() => websites.id),
   testCaseId: varchar("test_case_id", { length: 100 }).notNull(),
   title: varchar("title", { length: 500 }).notNull(),
   description: text("description").notNull(),
   type: varchar("type", { length: 50 }).notNull(),
   priority: varchar("priority", { length: 20 }).notNull(),
-  steps: json("steps").notNull(),
+  steps: jsonb("steps").notNull(),
   expectedResult: text("expected_result").notNull(),
   playwrightCode: text("playwright_code"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 // Execution Results - stores test execution results
-export const executionResults = mysqlTable("execution_results", {
-  id: bigint("id", { mode: "number" }).primaryKey().autoincrement(),
-  websiteId: bigint("website_id", { mode: "number" }).notNull(),
-  scrapeResultId: bigint("scrape_result_id", { mode: "number" }),
+export const executionResults = pgTable("execution_results", {
+  id: serial("id").primaryKey(),
+  websiteId: integer("website_id").notNull().references(() => websites.id),
+  scrapeResultId: integer("scrape_result_id").references(() => scrapeResults.id),
   url: varchar("url", { length: 500 }).notNull(),
   prompt: text("prompt").notNull(),
-  success: int("success").notNull(), // 1 for success, 0 for failure
-  totalActions: int("total_actions"),
-  successfulActions: int("successful_actions"),
-  results: json("results"),
-  screenshot: text("screenshot"), // base64 encoded
+  success: boolean("success").notNull(),
+  totalActions: integer("total_actions"),
+  successfulActions: integer("successful_actions"),
+  results: jsonb("results"),
+  screenshot: text("screenshot"),
   executedAt: timestamp("executed_at").notNull().defaultNow(),
 });
 

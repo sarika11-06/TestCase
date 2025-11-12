@@ -6,6 +6,7 @@ import { parseInstructions } from "./instructionParser";
 import { generateTestCases } from "./testCaseGenerator";
 import { saveXPathData, type StoredXPathData } from "./xpathStorage";
 import { inferSelectorForIntent } from "./selectorModel";
+import { saveScrapeResult, saveTestCases, saveExecutionResult } from "./db/queries";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/parse-instructions", (req, res) => {
@@ -52,7 +53,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch {}
     await browser.close();
 
-    res.json({
+    const responseData = {
       results,
       summary: {
         total: results.length,
@@ -61,7 +62,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       },
       screenshot,
       success: results.every(r => r.success)
-    });
+    };
+
+    // Save execution result to database
+    try {
+      await saveExecutionResult({
+        url,
+        prompt: prompt || "",
+        success: responseData.success,
+        totalActions: responseData.summary.total,
+        successfulActions: responseData.summary.successful,
+        results: responseData.results,
+        screenshot,
+      });
+      console.log(`[API] ✓ Execution result saved to database`);
+    } catch (dbError: any) {
+      console.error('[API] Database save error (non-fatal):', dbError.message);
+    }
+
+    res.json(responseData);
   });
 
   app.post("/api/page-screenshot", async (req, res) => {
@@ -118,7 +137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // CORRECTED FLOW: Scrape → Analyze → Match → Generate
+  // CORRECTED FLOW: Scrape → Analyze → Match → Generate → Save to DB
   app.post("/api/generate-test-cases", async (req, res) => {
     try {
       const { url, prompt } = req.body;
@@ -132,6 +151,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const testCases = await generateTestCases(analysis, prompt);
       
       console.log(`[API] Step 4: Generated ${testCases.testCases.length} test cases`);
+      
+      // Save to database
+      try {
+        console.log(`[API] Step 5: Saving to database...`);
+        const scrapeResult = await saveScrapeResult({
+          url,
+          prompt,
+          analysisData: analysis,
+          interactiveElementsCount: analysis.allInteractive?.length || 0,
+        });
+        
+        if (testCases.testCases.length > 0) {
+          await saveTestCases({
+            scrapeResultId: scrapeResult.id,
+            websiteId: scrapeResult.websiteId,
+            testCases: testCases.testCases,
+          });
+        }
+        
+        console.log(`[API] ✓ Data saved to database`);
+      } catch (dbError: any) {
+        console.error('[API] Database save error (non-fatal):', dbError.message);
+      }
       
       res.json(testCases);
     } catch (error: any) {
