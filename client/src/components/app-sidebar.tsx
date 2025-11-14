@@ -1,4 +1,9 @@
-import { LayoutDashboard, AlertTriangle, FileCode, Activity } from "lucide-react";
+import {
+  LayoutDashboard,
+  AlertTriangle,
+  FileCode,
+  Activity,
+} from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -13,7 +18,7 @@ import {
 
 const menuItems = [
   {
-    title: "Test Generator",
+    title: "Test Case Generator",
     url: "/",
     icon: FileCode,
   },
@@ -41,13 +46,18 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>AI Test Case Generator</SidebarGroupLabel>
+          <SidebarGroupLabel></SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={location === item.url}>
-                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(/ /g, '-')}`}>
+                    <Link
+                      href={item.url}
+                      data-testid={`link-${item.title
+                        .toLowerCase()
+                        .replace(/ /g, "-")}`}
+                    >
                       <item.icon />
                       <span>{item.title}</span>
                     </Link>

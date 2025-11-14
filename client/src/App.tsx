@@ -40,7 +40,7 @@ function App() {
             <div className="flex flex-col flex-1">
               <header className="flex items-center justify-between p-2 border-b">
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
-                <h2 className="text-sm font-semibold">AI Test Case Generator</h2>
+                {/*<h2 className="text-sm font-semibold">TestifyAI</h2>*/}
               </header>
               <main className="flex-1 overflow-auto">
                 <Router />
