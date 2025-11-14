@@ -446,6 +446,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get all websites (for heatmap)
+  app.get("/api/websites", async (_req, res) => {
+    try {
+      const db = await import("./db/connection").then(m => m.db);
+      const { websites } = await import("./db/schema");
+      const allWebsites = await db.select().from(websites);
+      res.json(allWebsites);
+    } catch (error) {
+      console.error('[API] Error fetching websites:', error);
+      res.status(500).json({ error: "Failed to fetch websites" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

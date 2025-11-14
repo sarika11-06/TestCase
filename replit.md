@@ -36,14 +36,27 @@ This application allows users to:
 ├── client/
 │   ├── src/
 │   │   ├── components/
-│   │   │   └── TestCaseGenerator.tsx  # Main component
+│   │   │   ├── ui/                    # Shadcn UI components
+│   │   │   ├── TestCaseGenerator.tsx  # Main generator component
+│   │   │   ├── stat-card.tsx          # Dashboard stat cards
+│   │   │   ├── status-badge.tsx       # Test status badges
+│   │   │   ├── progress-indicator.tsx # Flakiness progress bars
+│   │   │   ├── root-cause-panel.tsx   # Root cause display
+│   │   │   ├── execution-history.tsx  # Test execution timeline
+│   │   │   ├── flaky-test-table.tsx   # Flaky tests data table
+│   │   │   └── app-sidebar.tsx        # Navigation sidebar
 │   │   ├── pages/
-│   │   │   └── Home.tsx               # Home page
-│   │   └── App.tsx                    # App routing
+│   │   │   ├── Home.tsx               # Test generator page
+│   │   │   ├── Dashboard.tsx          # Overview dashboard
+│   │   │   ├── FlakyTests.tsx         # Flaky tests listing
+│   │   │   ├── TestDetail.tsx         # Individual test analysis
+│   │   │   └── Heatmap.tsx            # Test distribution heatmap
+│   │   └── App.tsx                    # App routing & sidebar
 ├── server/
-│   ├── routes.ts                      # API endpoints
+│   ├── routes.ts                      # API endpoints (including flaky test APIs)
 │   ├── scraper.ts                     # Web scraping logic
 │   ├── testCaseGenerator.ts          # AI test generation
+│   ├── flaky-analyzer.ts             # Flaky test detection logic
 │   └── openai.ts                      # OpenAI client
 ├── shared/
 │   └── schema.ts                      # Shared TypeScript schemas
@@ -66,14 +79,25 @@ This application allows users to:
    - Test categorization (UI, API, E2E, etc.)
    - Priority levels (High, Medium, Low)
 
-3. **Beautiful UI**: 
+3. **Flaky Test Detection System**:
+   - **Dashboard**: Real-time overview showing total tests executed, flaky test count, success rate, and average execution time
+   - **Flaky Tests Listing**: Searchable and filterable table of all flaky tests with detailed metrics
+   - **Test Detail View**: In-depth analysis of individual tests including:
+     - Flakiness score and metrics (timing variance, failure rate)
+     - Root cause analysis and recommendations
+     - Execution history with timeline visualization
+     - Performance charts (success rate over time, execution duration trends)
+   - **Test Heatmap**: Visual representation of test case distribution across websites
+
+4. **Beautiful UI**: 
    - Clean, professional design following Linear/Material Design principles
-   - Responsive layout for all screen sizes
+   - Responsive layout for all screen sizes with sidebar navigation
    - Interactive test case cards with expand/collapse
    - Syntax-highlighted code blocks
+   - Data visualization with charts and progress indicators
    - Copy and download functionality
 
-4. **Export Options**:
+5. **Export Options**:
    - Copy individual test cases to clipboard
    - Download all test cases as Markdown file
    - Includes Playwright code for automation
